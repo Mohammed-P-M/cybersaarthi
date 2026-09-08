@@ -1,0 +1,10 @@
+# CyberSaarthi
+node_modules/
+.next/
+.env
+.env.local
+__pycache__/
+*.pyc
+uploads/
+postgres_data/
+neo4j_data/
