@@ -9,7 +9,7 @@ _paddle_ocr_engine = None
 try:
     from paddleocr import PaddleOCR
     # Initialize PaddleOCR with English
-    _paddle_ocr_engine = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+    _paddle_ocr_engine = PaddleOCR(use_angle_cls=True, lang='en')
     logger.info("PaddleOCR initialized successfully.")
 except Exception as e:
     logger.warning(f"PaddleOCR not available or failed to load ({e}). Using robust fallback OCR engine.")

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload, ShieldCheck, FileText, MapPin, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
 import StepperModal, { ProcessingStep } from '@/components/StepperModal';
-import { cyberEngine } from '@/lib/cybersaarthi_engine';
+import { submitCitizenReport } from '@/lib/api';
 
 export default function CitizenPortal() {
   const router = useRouter();
@@ -38,12 +38,15 @@ export default function CitizenPortal() {
     setCurrentStep('GRAPH');
     await new Promise(r => setTimeout(r, 700));
 
-    // Process through engine
-    const inc = await cyberEngine.processEvidenceUpload(file, description, location);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('description', description);
+    formData.append('location', location);
+    const result = await submitCitizenReport(formData);
     setCurrentStep('COMPLETE');
     await new Promise(r => setTimeout(r, 500));
 
-    router.push(`/result/${inc.id}`);
+    router.push(`/result/${result.incident_id}`);
   };
 
   return (

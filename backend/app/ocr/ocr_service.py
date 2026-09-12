@@ -13,7 +13,7 @@ class OCRService:
     def _init_ocr(self):
         try:
             from paddleocr import PaddleOCR
-            self.ocr_engine = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+            self.ocr_engine = PaddleOCR(use_angle_cls=True, lang='en')
             logger.info("PaddleOCR engine initialized successfully.")
         except Exception as e:
             logger.warning(f"PaddleOCR failed to initialize: {e}. OCR fallback parser active.")

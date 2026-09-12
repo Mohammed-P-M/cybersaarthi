@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -9,14 +9,19 @@ import {
 } from 'lucide-react';
 import CytoscapeGraph from '@/components/CytoscapeGraph';
 import Timeline from '@/components/Timeline';
-import { cyberEngine, GraphNode, Incident } from '@/lib/cybersaarthi_engine';
+import type { GraphNode, GraphData } from '@/lib/cybersaarthi_engine';
+import { getIncidentDetails, getIncidentGraph } from '@/lib/api';
 
 export default function IncidentDetailPage() {
   const params = useParams();
   const incidentId = params.id as string;
-  const incident = cyberEngine.getIncident(incidentId);
+  const [incident,setIncident]=useState<any>(null);
+  const [graphData,setGraphData]=useState<GraphData>({nodes:[],edges:[]});
+  const [connectedIncidents,setConnectedIncidents]=useState<any[]>([]);
   const [selectedGraphNode, setSelectedGraphNode] = useState<GraphNode | null>(null);
   const [activeTab, setActiveTab] = useState<'properties' | 'graph' | 'timeline'>('properties');
+
+  useEffect(()=>{(async()=>{try{const [inc,raw]=await Promise.all([getIncidentDetails(incidentId),getIncidentGraph(incidentId)]);setIncident(inc);const typeMap:any={Phone:'PHONE',Transaction:'TRANSACTION_ID',Email:'EMAIL',Location:'LOCATION'};const nodes:GraphNode[]=raw.nodes.map((n:any)=>({id:n.id,label:n.label,type:typeMap[n.type]||n.type,properties:n.properties||{}}));setGraphData({nodes,edges:raw.edges.map((e:any)=>({id:e.id,source:e.source,target:e.target,rel_type:e.rel_type}))});const ids=new Set(nodes.filter(n=>n.type==='Incident'&&n.id!==incidentId).map(n=>n.id));const connected=await Promise.all(Array.from(ids).slice(0,20).map(id=>getIncidentDetails(id).catch(()=>null)));setConnectedIncidents(connected.filter(Boolean));}catch(e){console.error(e)}})()},[incidentId]);
 
   if (!incident) {
     return (
@@ -29,22 +34,6 @@ export default function IncidentDetailPage() {
       </div>
     );
   }
-
-  const graphData = cyberEngine.getIncidentGraph(incidentId);
-
-  // Find connected incidents (same cluster via shared properties)
-  const connectedIncidents = useMemo(() => {
-    const connectedIds = new Set<string>();
-    graphData.nodes.forEach(n => {
-      if (n.type === 'Incident' && n.id !== incidentId) {
-        connectedIds.add(n.id);
-      }
-    });
-    return Array.from(connectedIds)
-      .map(id => cyberEngine.getIncident(id))
-      .filter((i): i is Incident => i !== undefined)
-      .slice(0, 20);
-  }, [graphData, incidentId]);
 
   const dateStr = new Date(incident.timestamp).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'long', year: 'numeric'
@@ -135,7 +124,7 @@ export default function IncidentDetailPage() {
               Extracted Properties ({incident.properties.length})
             </h3>
             {incident.properties.map((prop) => {
-              const stats = cyberEngine.getPropertyStats(`${prop.type}:${prop.normalized_value}`);
+              const stats = null;
               return (
                 <div key={prop.id} className="p-3 rounded-xl bg-obsidian-900/80 border border-obsidian-800">
                   <div className="flex items-center justify-between">

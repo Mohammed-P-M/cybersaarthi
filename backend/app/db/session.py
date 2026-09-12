@@ -20,7 +20,14 @@ except Exception as e:
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=postgres_engine)
 
 def init_db():
-    Base.metadata.create_all(bind=postgres_engine)
+    global postgres_engine, SessionLocal
+    try:
+        Base.metadata.create_all(bind=postgres_engine)
+    except Exception as e:
+        logger.warning(f"Could not connect to PostgreSQL: {e}. Falling back to SQLite database.")
+        postgres_engine = create_engine("sqlite:///./cybersaarthi.db", connect_args={"check_same_thread": False})
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=postgres_engine)
+        Base.metadata.create_all(bind=postgres_engine)
 
 def get_db():
     db = SessionLocal()
@@ -36,13 +43,15 @@ class Neo4jConnector:
 
     def connect(self):
         try:
-            self.driver = GraphDatabase.driver(
+            driver = GraphDatabase.driver(
                 settings.NEO4J_URI, 
                 auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
             )
+            driver.verify_connectivity()
+            self.driver = driver
             logger.info("Connected to Neo4j database successfully.")
         except Exception as e:
-            logger.warning(f"Could not connect to Neo4j: {e}. Utilizing fallback graph engine.")
+            logger.warning(f"Could not connect to Neo4j ({e}). Utilizing fallback graph engine.")
             self.driver = None
 
     def close(self):

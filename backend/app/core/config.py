@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Neo4j
     NEO4J_URI: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER: str = os.getenv("NEO4J_USER", "neo4j")
-    NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "cybersaarthi123")
+    NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "cybersaarthi_graph_pass")
 
     # LLM / AI Config
     AI_API_KEY: str = os.getenv("AI_API_KEY", "")

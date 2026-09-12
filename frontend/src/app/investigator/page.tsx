@@ -1,17 +1,19 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Activity, ShieldAlert, Network, Layers, MapPin, ExternalLink, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { cyberEngine } from '@/lib/cybersaarthi_engine';
+import { getDashboardStats } from '@/lib/api';
 
 export default function InvestigatorDashboard() {
-  const stats = cyberEngine.getDashboardStats();
+  const [stats,setStats]=useState<any>(null);
+  useEffect(()=>{getDashboardStats().then(setStats).catch(console.error)},[]);
+  if(!stats)return <div className="max-w-7xl mx-auto px-6 py-12 text-slate-400">Loading intelligence dashboard...</div>;
 
-  const chartData = stats.most_connected_properties.map(p => ({
-    name: p.value.length > 14 ? p.value.substring(0, 12) + '...' : p.value,
-    count: p.count,
+  const chartData = stats.top_connected_properties.map((p:any) => ({
+    name: p.normalized_value.length > 14 ? p.normalized_value.substring(0, 12) + '...' : p.normalized_value,
+    count: p.connected_incidents_count,
     type: p.type
   }));
 
@@ -119,14 +121,14 @@ export default function InvestigatorDashboard() {
             <p className="text-xs text-slate-400 mb-4">Indicators with highest incident degree</p>
 
             <div className="space-y-2.5">
-              {stats.most_connected_properties.slice(0, 5).map((item, idx) => (
+              {stats.top_connected_properties.slice(0, 5).map((item: any, idx: number) => (
                 <div key={idx} className="p-3 rounded-xl bg-obsidian-900/80 border border-obsidian-800 flex items-center justify-between">
                   <div>
                     <span className="text-[10px] font-bold text-cyber-cyan uppercase">{item.type}</span>
-                    <p className="font-mono text-xs text-slate-200 font-semibold">{item.value}</p>
+                    <p className="font-mono text-xs text-slate-200 font-semibold">{item.normalized_value}</p>
                   </div>
                   <span className="text-xs font-extrabold text-amber-400 bg-amber-400/10 px-2 py-1 rounded-lg border border-amber-400/20">
-                    {item.count} Incidents
+                    {item.connected_incidents_count} Incidents
                   </span>
                 </div>
               ))}
@@ -162,7 +164,7 @@ export default function InvestigatorDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-obsidian-800/60">
-              {stats.recent_incidents.map((inc) => (
+              {stats.recent_incidents.map((inc: any) => (
                 <tr key={inc.id} className="hover:bg-obsidian-900/40 transition">
                   <td className="py-3 px-4 font-mono font-bold text-cyber-cyan">{inc.id}</td>
                   <td className="py-3 px-4 font-medium text-slate-200">{inc.category}</td>

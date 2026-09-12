@@ -101,6 +101,8 @@ def seed_synthetic_dataset(db: Session, num_incidents: int = 120):
     ]
 
     for item in demo_clusters:
+        if db.query(Incident).filter(Incident.id == item["id"]).first():
+            continue
         inc_date = base_date + timedelta(days=item["days_offset"])
         inc = Incident(
             id=item["id"],
@@ -150,6 +152,8 @@ def seed_synthetic_dataset(db: Session, num_incidents: int = 120):
     # Generate remaining ~110 incidents into 9 additional clusters
     for i in range(7, num_incidents + 1):
         inc_id = f"INC{i:03d}"
+        if db.query(Incident).filter(Incident.id == inc_id).first():
+            continue
         days_offset = random.randint(0, 30)
         inc_date = base_date + timedelta(days=days_offset)
 

@@ -8,18 +8,14 @@ from app.api.router import router as api_router
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cybersaarthi")
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
-)
+app = FastAPI(title=settings.PROJECT_NAME, openapi_url=f"{settings.API_V1_STR}/openapi.json")
 
-# Enable CORS for Next.js frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
 @app.on_event("startup")
@@ -37,8 +33,4 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def root():
-    return {
-        "app": settings.PROJECT_NAME,
-        "status": "online",
-        "docs": "/docs"
-    }
+    return {"app": settings.PROJECT_NAME, "status": "online", "docs": "/docs"}

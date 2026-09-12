@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Network, ChevronRight, ShieldAlert } from 'lucide-react';
 import CytoscapeGraph from '@/components/CytoscapeGraph';
 import NodeSelectionPanel from '@/components/NodeSelectionPanel';
 import FilterSidebar, { FilterOptions } from '@/components/FilterSidebar';
-import { cyberEngine, GraphNode } from '@/lib/cybersaarthi_engine';
+import type { GraphNode, GraphData } from '@/lib/cybersaarthi_engine';
+import { getIncidentGraph } from '@/lib/api';
 
 export default function IncidentNetworkPage() {
   const params = useParams();
@@ -21,21 +22,9 @@ export default function IncidentNetworkPage() {
     minConnections: 1
   });
 
-  const graphData = useMemo(() => {
-    const raw = cyberEngine.getIncidentGraph(incidentId);
-    const filteredNodes = raw.nodes.filter(node => {
-      if (node.type !== 'Incident') {
-        return filters.propertyTypes.includes(node.type);
-      }
-      if (filters.location && node.properties.location !== filters.location) return false;
-      return true;
-    });
-    const validIds = new Set(filteredNodes.map(n => n.id));
-    return {
-      nodes: filteredNodes,
-      edges: raw.edges.filter(e => validIds.has(e.source) && validIds.has(e.target))
-    };
-  }, [incidentId, filters]);
+  const [graphData,setGraphData]=useState<GraphData>({nodes:[],edges:[]});
+  useEffect(()=>{getIncidentGraph(incidentId).then(raw=>{const typeMap:any={Phone:'PHONE',Transaction:'TRANSACTION_ID',Email:'EMAIL',Location:'LOCATION'}; const nodes:GraphNode[]=raw.nodes.map((n:any)=>({id:n.id,label:n.label,type:typeMap[n.type]||n.type,properties:n.properties||{}})); setGraphData({nodes,edges:raw.edges.map((e:any)=>({id:e.id,source:e.source,target:e.target,rel_type:e.rel_type}))});}).catch(console.error)},[incidentId]);
+  const filteredGraphData=(()=>{const nodes=graphData.nodes.filter(n=>n.type==='Incident'||filters.propertyTypes.includes(n.type)); const ids=new Set(nodes.map(n=>n.id)); return {nodes,edges:graphData.edges.filter(e=>ids.has(e.source)&&ids.has(e.target))};})();
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-65px)] overflow-hidden bg-obsidian-950">
@@ -73,7 +62,7 @@ export default function IncidentNetworkPage() {
 
         <div className="flex-1 relative h-full">
           <CytoscapeGraph
-            graphData={graphData}
+            graphData={filteredGraphData}
             onSelectNode={setSelectedNode}
             selectedNodeId={selectedNode?.id}
           />

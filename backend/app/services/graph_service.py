@@ -301,3 +301,15 @@ def get_entity_details(entity_type: str, normalized_value: str, db: Session) -> 
         last_observed=last_obs,
         connected_incidents=connected_incidents_list
     )
+
+
+def sync_all_to_neo4j(db: Session):
+    driver=get_neo4j_driver()
+    if not driver: return False
+    incidents=db.query(Incident).all()
+    for inc in incidents:
+        rows=db.query(Property,IncidentProperty).join(IncidentProperty,Property.id==IncidentProperty.property_id).filter(IncidentProperty.incident_id==inc.id).all()
+        props=[PropertyItem(id=p.id,type=p.type,raw_value=p.raw_value,normalized_value=p.normalized_value,confidence=ip.confidence,source=ip.source) for p,ip in rows]
+        add_incident_to_graph(inc.id,inc.timestamp,inc.category,props)
+    logger.info("Synchronized %s PostgreSQL incidents to Neo4j",len(incidents))
+    return True
