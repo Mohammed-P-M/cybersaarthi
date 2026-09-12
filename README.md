@@ -107,3 +107,8 @@ GET    /api/v1/investigator/incidents
 ## License
 
 SIH 2026 Prototype — For demonstration purposes only.
+
+
+### Data integrity behavior
+
+The citizen submission pipeline never fabricates OCR text. If PaddleOCR is unavailable, the OCR model cannot be downloaded, or the uploaded evidence contains no readable text, the submission fails with an explicit error and the incident/evidence database transaction is rolled back. Optional description and location fields are stored as NULL when left blank.

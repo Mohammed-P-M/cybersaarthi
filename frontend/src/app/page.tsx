@@ -5,12 +5,15 @@ import { useRouter } from 'next/navigation';
 import { Upload, ShieldCheck, FileText, MapPin, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
 import StepperModal, { ProcessingStep } from '@/components/StepperModal';
 import { submitCitizenReport } from '@/lib/api';
+import { CRIME_CATEGORIES } from '@/lib/crimeCategories';
 
 export default function CitizenPortal() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [description, setDescription] = useState('');
-  const [location, setLocation] = useState('Kochi');
+  const [location, setLocation] = useState('');
+  const [category, setCategory] = useState('CYBER_FRAUD');
+  const [error, setError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState<ProcessingStep>('UPLOADING');
 
@@ -24,29 +27,26 @@ export default function CitizenPortal() {
     e.preventDefault();
     if (!file) return;
 
+    setError('');
     setIsProcessing(true);
     setCurrentStep('UPLOADING');
 
-    // Simulate real-time backend pipeline stages
-    await new Promise(r => setTimeout(r, 600));
-    setCurrentStep('OCR');
-    await new Promise(r => setTimeout(r, 700));
-    setCurrentStep('EXTRACTING');
-    await new Promise(r => setTimeout(r, 600));
-    setCurrentStep('SAVING');
-    await new Promise(r => setTimeout(r, 600));
-    setCurrentStep('GRAPH');
-    await new Promise(r => setTimeout(r, 700));
-
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('description', description);
-    formData.append('location', location);
-    const result = await submitCitizenReport(formData);
-    setCurrentStep('COMPLETE');
-    await new Promise(r => setTimeout(r, 500));
+    if (description.trim()) formData.append('description', description.trim());
+    if (location.trim()) formData.append('location', location.trim());
+    formData.append('category', category);
 
-    router.push(`/result/${result.incident_id}`);
+    try {
+      const result = await submitCitizenReport(formData);
+      setCurrentStep('COMPLETE');
+      await new Promise(r => setTimeout(r, 300));
+      router.push(`/result/${result.incident_id}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Evidence processing failed.';
+      setError(message);
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -105,6 +105,23 @@ export default function CitizenPortal() {
             </div>
           </div>
 
+          {/* Crime Category */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+              Crime Category
+            </label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full bg-obsidian-900 border border-obsidian-700 rounded-xl p-3 text-xs text-slate-200 focus:border-cyber-cyan focus:outline-none"
+            >
+              {CRIME_CATEGORIES.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-500 mt-1">Choose the actual crime type. Cybercrime is only one supported category.</p>
+          </div>
+
           {/* Description & Location Inputs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -138,6 +155,13 @@ export default function CitizenPortal() {
               </div>
             </div>
           </div>
+
+          {error && (
+            <div role="alert" className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+              <div className="font-bold mb-1">Submission failed</div>
+              <div>{error}</div>
+            </div>
+          )}
 
           {/* Submit Button */}
           <button

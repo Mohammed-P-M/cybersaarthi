@@ -46,6 +46,8 @@ services:
       - NEO4J_PASSWORD=cybersaarthi_graph_pass
       - AI_API_KEY=${AI_API_KEY:-}
       - JWT_SECRET=cybersaarthi_super_secret_jwt_key_sih_2026
+      - PADDLE_PDX_MODEL_SOURCE=BOS
+      - PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
     ports:
       - "8000:8000"
     depends_on:
@@ -55,6 +57,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/uploads:/app/uploads
+      - paddle_models:/root/.paddlex
 
   frontend:
     build:
@@ -71,3 +74,4 @@ services:
 volumes:
   postgres_data:
   neo4j_data:
+  paddle_models:

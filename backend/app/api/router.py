@@ -9,10 +9,11 @@ from sqlalchemy import func
 
 from app.db.session import get_db
 from app.models.models import Incident, Evidence, Property, IncidentProperty, AuditLog
-from app.ocr.ocr_service import ocr_service
+from app.ocr.ocr_service import OCRProcessingError, ocr_service
 from app.extraction.extractor import property_extractor
 from app.graph.graph_service import graph_service
 from app.seed.seed import generate_synthetic_dataset
+from app.crime_categories import CRIME_CATEGORIES, CATEGORY_LABELS
 
 router = APIRouter()
 _synthetic_populated = False
@@ -37,19 +38,21 @@ def _safe_incident_id(db: Session) -> str:
 
 
 def ensure_synthetic_data(db: Session):
-    """Ensure the demo dataset exists without duplicating already-present incident IDs."""
+    """Seed the synthetic demo only when the database is completely empty.
+
+    This prevents every fresh API request from rebuilding a large demo dataset
+    when the database already contains user-submitted or existing demo cases.
+    """
     global _synthetic_populated
-    existing_synthetic = db.query(Incident).filter(Incident.source == "SYNTHETIC").count()
-    if _synthetic_populated and existing_synthetic >= 50:
+    if _synthetic_populated:
         return
-    if existing_synthetic >= 50:
+
+    if db.query(Incident).count() > 0:
         _synthetic_populated = True
         return
 
-    data = generate_synthetic_dataset(120)
+    data = generate_synthetic_dataset(96)
     for item in data:
-        if db.query(Incident).filter(Incident.id == item["id"]).first():
-            continue
         inc = Incident(
             id=item["id"],
             description=item["description"],
@@ -72,14 +75,19 @@ def ensure_synthetic_data(db: Session):
                 )
                 db.add(prop)
                 db.flush()
-            ip = IncidentProperty(
+            db.add(IncidentProperty(
                 incident_id=inc.id,
                 property_id=prop.id,
                 confidence=p["confidence"],
                 source="SYNTHETIC",
-            )
-            db.add(ip)
+            ))
             props_for_graph.append(p)
+        # Category/location are graph metadata even when OCR did not produce them.
+        if inc.location:
+            loc = graph_service.metadata_property("LOCATION", inc.location, inc.location, 1.0, "SYNTHETIC")
+            props_for_graph.append(loc)
+        cat = graph_service.metadata_property("CRIME_CATEGORY", inc.category, inc.category, 1.0, "SYNTHETIC")
+        props_for_graph.append(cat)
         graph_service.sync_incident_to_graph(inc.id, {
             "description": inc.description,
             "timestamp": inc.timestamp.isoformat(),
@@ -111,11 +119,11 @@ def create_incident(
     ensure_synthetic_data(db)
     inc = Incident(
         id=_safe_incident_id(db),
-        description=description or "Citizen cybercrime submission",
+        description=description.strip() if description and description.strip() else None,
         timestamp=datetime.datetime.utcnow(),
         source="CITIZEN_REPORT",
         category=category or "CYBER_FRAUD",
-        location=location or "Unknown",
+        location=location.strip() if location and location.strip() else None,
     )
     db.add(inc)
     db.commit()
@@ -131,6 +139,7 @@ def create_incident(
 async def submit_full_citizen_report(
     description: Optional[str] = Form(""),
     location: Optional[str] = Form(""),
+    category: Optional[str] = Form("CYBER_FRAUD"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
@@ -139,11 +148,11 @@ async def submit_full_citizen_report(
     inc_id = _safe_incident_id(db)
     inc = Incident(
         id=inc_id,
-        description=description or "Reported cybercrime evidence",
+        description=description.strip() if description and description.strip() else None,
         timestamp=datetime.datetime.utcnow(),
         source="CITIZEN_REPORT",
-        category="CYBER_FRAUD",
-        location=location or "Unknown",
+        category=(category or "OTHER").strip().upper() or "OTHER",
+        location=location.strip() if location and location.strip() else None,
     )
     db.add(inc)
     db.flush()
@@ -168,16 +177,25 @@ async def submit_full_citizen_report(
         file_type=file.content_type or "application/octet-stream",
         storage_path=storage_path,
         sha256_hash=sha256,
-        ocr_text="",
+        ocr_text=None,
     )
     db.add(ev)
-    db.commit()
 
-    ocr_text = ocr_service.extract_text(content, safe_name)
+    try:
+        ocr_text = ocr_service.extract_text(content, safe_name)
+    except OCRProcessingError as exc:
+        db.rollback()
+        try:
+            if os.path.exists(storage_path):
+                os.remove(storage_path)
+        except OSError:
+            logger = __import__("logging").getLogger("cybersaarthi")
+            logger.warning("Could not remove failed evidence file: %s", storage_path)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     ev.ocr_text = ocr_text
-    db.commit()
 
-    extracted = property_extractor.extract_properties(ocr_text or description or "")
+    extracted = property_extractor.extract_properties(ocr_text)
     saved_props = []
     for p in extracted:
         prop = db.query(Property).filter_by(normalized_value=p["normalized_value"]).first()
@@ -196,6 +214,15 @@ async def submit_full_citizen_report(
             )
             db.add(ip)
         saved_props.append({**p, "id": prop.id})
+
+    # Always graph-link the values explicitly supplied by the reporter.
+    if inc.location:
+        p = graph_service.metadata_property("LOCATION", inc.location, inc.location, 1.0, "REPORT")
+        if not any(x.get("type") == "LOCATION" and x.get("normalized_value") == inc.location for x in saved_props):
+            saved_props.append(p)
+    p = graph_service.metadata_property("CRIME_CATEGORY", inc.category, inc.category, 1.0, "REPORT")
+    if not any(x.get("type") == "CRIME_CATEGORY" and x.get("normalized_value") == inc.category for x in saved_props):
+        saved_props.append(p)
 
     db.commit()
     graph_service.sync_incident_to_graph(
@@ -228,10 +255,18 @@ async def upload_evidence(incident_id: str, file: UploadFile = File(...), db: Se
     with open(path, "wb") as f:
         f.write(content)
     ev = Evidence(id=f"ev_{uuid.uuid4().hex[:12]}", incident_id=incident_id, file_name=safe_name,
-                  file_type=file.content_type or "application/octet-stream", storage_path=path, sha256_hash=sha256, ocr_text="")
+                  file_type=file.content_type or "application/octet-stream", storage_path=path, sha256_hash=sha256, ocr_text=None)
     db.add(ev)
-    db.commit()
-    text = ocr_service.extract_text(content, safe_name)
+    try:
+        text = ocr_service.extract_text(content, safe_name)
+    except OCRProcessingError as exc:
+        db.rollback()
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     ev.ocr_text = text
     db.commit()
     extracted = property_extractor.extract_properties(text)
@@ -294,28 +329,89 @@ def get_incident_graph_endpoint(incident_id: str, db: Session = Depends(get_db))
 @router.get("/graph/filter")
 def get_graph_filter(
     location: Optional[str] = None,
+    category: Optional[str] = None,
     min_connections: int = Query(1, ge=1),
+    limit: int = Query(36, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     ensure_synthetic_data(db)
-    q = db.query(Incident)
+
+    # First select a small, recent set of incidents; then fetch all their
+    # properties in one joined query. This avoids the previous N+1 query loop.
+    incident_query = db.query(Incident.id).join(IncidentProperty, IncidentProperty.incident_id == Incident.id)
     if location:
-        q = q.filter(Incident.location.ilike(f"%{location}%"))
-    incidents = q.order_by(Incident.timestamp.desc()).limit(80).all()
+        incident_query = incident_query.filter(Incident.location.ilike(f"%{location.strip()}%"))
+    if category:
+        incident_query = incident_query.filter(Incident.category == category)
+    selected = (
+        incident_query.group_by(Incident.id)
+        .having(func.count(IncidentProperty.property_id) >= min_connections)
+        .order_by(func.max(Incident.timestamp).desc())
+        .limit(limit)
+        .subquery()
+    )
+
+    rows = (
+        db.query(Incident, Property, IncidentProperty)
+        .join(selected, selected.c.id == Incident.id)
+        .join(IncidentProperty, IncidentProperty.incident_id == Incident.id)
+        .join(Property, Property.id == IncidentProperty.property_id)
+        .order_by(Incident.timestamp.desc())
+        .all()
+    )
+
     nodes = {}
     edges = {}
-    for inc in incidents:
-        rows = db.query(Property, IncidentProperty).join(IncidentProperty, Property.id == IncidentProperty.property_id).filter(IncidentProperty.incident_id == inc.id).all()
-        if len(rows) < min_connections:
-            continue
-        nodes[inc.id] = {"id":inc.id,"label":"Incident","type":"Incident","properties":{"id":inc.id,"description":inc.description,"timestamp":inc.timestamp.isoformat() if inc.timestamp else "","category":inc.category,"location":inc.location}}
-        for p, ip in rows:
-            label = {"PHONE":"Phone","UPI":"UPI","TRANSACTION_ID":"Transaction","URL":"URL","EMAIL":"Email","LOCATION":"Location","AMOUNT":"Amount"}.get(p.type,p.type)
-            pid=f"{label}:{p.normalized_value}"
-            nodes[pid]={"id":pid,"label":label,"type":p.type,"properties":{"raw_value":p.raw_value,"normalized_value":p.normalized_value,"type":p.type}}
-            eid=f"{inc.id}->{pid}"
-            edges[eid]={"id":eid,"source":inc.id,"target":pid,"rel_type":{"LOCATION":"OCCURRED_AT"}.get(p.type,f"HAS_{p.type}")}
-    return {"nodes":list(nodes.values()),"edges":list(edges.values())}
+    for inc, p, ip in rows:
+        nodes[inc.id] = {
+            "id": inc.id, "label": "Incident", "type": "Incident",
+            "properties": {
+                "id": inc.id,
+                "description": inc.description,
+                "timestamp": inc.timestamp.isoformat() if inc.timestamp else "",
+                "category": inc.category,
+                "location": inc.location,
+            },
+        }
+        label = {
+            "PHONE": "Phone", "UPI": "UPI", "TRANSACTION_ID": "Transaction",
+            "URL": "URL", "EMAIL": "Email", "IFSC": "IFSC", "LOCATION": "Location",
+            "AMOUNT": "Amount", "CRIME_CATEGORY": "CrimeCategory",
+        }.get(p.type, p.type)
+        pid = f"{label}:{p.normalized_value}"
+        nodes[pid] = {
+            "id": pid, "label": label, "type": p.type,
+            "properties": {"raw_value": p.raw_value, "normalized_value": p.normalized_value, "type": p.type},
+        }
+        rel = "HAS_CATEGORY" if p.type == "CRIME_CATEGORY" else ("OCCURRED_AT" if p.type == "LOCATION" else f"HAS_{p.type}")
+        eid = f"{inc.id}->{pid}"
+        edges[eid] = {"id": eid, "source": inc.id, "target": pid, "rel_type": rel}
+
+    # Ensure reporter-supplied location/category appear in the graph even for
+    # incidents created before these metadata properties were introduced.
+    incident_objs = {inc.id: inc for inc, _, _ in rows}
+    for inc in incident_objs.values():
+        for ptype, value in (("LOCATION", inc.location), ("CRIME_CATEGORY", inc.category)):
+            if not value:
+                continue
+            label = "Location" if ptype == "LOCATION" else "CrimeCategory"
+            pid = f"{label}:{value}"
+            nodes[pid] = {"id": pid, "label": label, "type": ptype,
+                          "properties": {"raw_value": value, "normalized_value": value, "type": ptype}}
+            rel = "OCCURRED_AT" if ptype == "LOCATION" else "HAS_CATEGORY"
+            eid = f"{inc.id}->{pid}"
+            edges[eid] = {"id": eid, "source": inc.id, "target": pid, "rel_type": rel}
+
+    return {"nodes": list(nodes.values()), "edges": list(edges.values()), "incident_count": len(incident_objs)}
+
+
+def _connected_hub_count(db: Session) -> int:
+    rows = (db.query(Property.id)
+        .join(IncidentProperty, Property.id == IncidentProperty.property_id)
+        .group_by(Property.id)
+        .having(func.count(func.distinct(IncidentProperty.incident_id)) > 1)
+        .all())
+    return len(rows)
 
 
 @router.get("/investigator/dashboard")
@@ -325,12 +421,31 @@ def get_dashboard_metrics(db: Session = Depends(get_db)):
     unique_props = db.query(Property).count()
     top_rows = db.query(Property.type, Property.normalized_value, func.count(IncidentProperty.incident_id).label("count")).join(IncidentProperty, Property.id==IncidentProperty.property_id).group_by(Property.id,Property.type,Property.normalized_value).order_by(func.count(IncidentProperty.incident_id).desc()).limit(10).all()
     recent = db.query(Incident).order_by(Incident.created_at.desc()).limit(8).all()
+    primary_location_row = (db.query(Incident.location, func.count(Incident.id).label("count"))
+        .filter(Incident.location.isnot(None))
+        .group_by(Incident.location)
+        .order_by(func.count(Incident.id).desc())
+        .first())
     return {
-        "total_incidents": total, "unique_properties": unique_props, "connected_clusters": 10,
+        "total_incidents": total,
+        "unique_properties": unique_props,
+        "connected_clusters": _connected_hub_count(db),
         "new_incidents_today": db.query(Incident).filter(Incident.source == "CITIZEN_REPORT").count(),
+        "primary_hub_location": primary_location_row[0] if primary_location_row else None,
+        "primary_hub_count": int(primary_location_row[1]) if primary_location_row else 0,
         "top_connected_properties":[{"type":t,"normalized_value":v,"connected_incidents_count":c} for t,v,c in top_rows],
         "recent_incidents":[{"id":i.id,"description":i.description,"location":i.location,"timestamp":i.timestamp,"category":i.category,"source":i.source} for i in recent],
     }
+
+
+@router.get("/investigator/facets")
+def get_investigator_facets(db: Session = Depends(get_db)):
+    ensure_synthetic_data(db)
+    locations = [x[0] for x in db.query(Incident.location).filter(Incident.location.isnot(None)).distinct().order_by(Incident.location).all()]
+    categories = [x[0] for x in db.query(Incident.category).filter(Incident.category.isnot(None)).distinct().order_by(Incident.category).all()]
+    # Include supported categories even before a case exists for one of them.
+    category_values = sorted(set(categories).union(CATEGORY_LABELS.keys()))
+    return {"locations": locations, "categories": [{"id": c, "label": CATEGORY_LABELS.get(c, c.replace("_", " ").title())} for c in category_values]}
 
 
 @router.get("/investigator/incidents")

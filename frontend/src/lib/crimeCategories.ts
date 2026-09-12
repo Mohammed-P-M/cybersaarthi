@@ -1,0 +1,17 @@
+export const CRIME_CATEGORIES = [
+  { id: 'CYBER_FRAUD', label: 'Cyber Fraud' },
+  { id: 'PHISHING', label: 'Phishing' },
+  { id: 'FINANCIAL_FRAUD', label: 'Financial Fraud' },
+  { id: 'IDENTITY_THEFT', label: 'Identity Theft' },
+  { id: 'ONLINE_HARASSMENT', label: 'Online Harassment' },
+  { id: 'EXTORTION', label: 'Extortion' },
+  { id: 'THEFT', label: 'Theft' },
+  { id: 'ROBBERY', label: 'Robbery' },
+  { id: 'BURGLARY', label: 'Burglary' },
+  { id: 'ASSAULT', label: 'Assault' },
+  { id: 'PROPERTY_CRIME', label: 'Property Crime' },
+  { id: 'DRUG_TRAFFICKING', label: 'Drug Trafficking' },
+  { id: 'HUMAN_TRAFFICKING', label: 'Human Trafficking' },
+  { id: 'MISSING_PERSON', label: 'Missing Person' },
+  { id: 'OTHER', label: 'Other / Unclassified' },
+] as const;

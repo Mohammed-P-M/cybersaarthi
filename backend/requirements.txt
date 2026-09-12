@@ -8,8 +8,8 @@ pydantic-settings>=2.1.0
 python-multipart>=0.0.9
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
-paddlepaddle>=2.6.0
-paddleocr>=2.7.0.3
+paddlepaddle==3.3.1
+paddleocr==3.7.0
 pillow>=10.2.0
 requests>=2.31.0
 python-dotenv>=1.0.1

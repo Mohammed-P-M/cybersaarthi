@@ -18,17 +18,41 @@ export default function NetworkGraphPage() {
   const [showFilterSidebar, setShowFilterSidebar] = useState(true);
   
   const [filters, setFilters] = useState<FilterOptions>({
-    propertyTypes: ['PHONE', 'UPI', 'TRANSACTION_ID', 'URL', 'EMAIL', 'LOCATION'],
+    propertyTypes: ['PHONE', 'UPI', 'TRANSACTION_ID', 'URL', 'EMAIL', 'LOCATION', 'CRIME_CATEGORY'],
     location: '',
     category: '',
     minConnections: 1
   });
 
-  useEffect(()=>{let cancelled=false;(async()=>{try{let raw:any;if(searchArg){const found=await getIncidents({search:searchArg,limit:1});raw=found.incidents?.[0]?await getIncidentGraph(found.incidents[0].id):await getFilteredGraph({min_connections:1});}else{raw=await getFilteredGraph({min_connections:filters.minConnections,...(filters.location?{location:filters.location}:{})});}if(cancelled)return;const typeMap:any={Phone:'PHONE',Transaction:'TRANSACTION_ID',Email:'EMAIL',Location:'LOCATION'};const nodes:GraphNode[]=raw.nodes.map((n:any)=>({id:n.id,label:n.label,type:typeMap[n.type]||n.type,properties:n.properties||{}}));const edges=raw.edges.map((e:any)=>({id:e.id,source:e.source,target:e.target,rel_type:e.rel_type}));const filtered=nodes.filter(n=>n.type==='Incident'||filters.propertyTypes.includes(n.type));const ids=new Set(filtered.map(n=>n.id));setGraphData({nodes:filtered,edges:edges.filter((e:any)=>ids.has(e.source)&&ids.has(e.target))});}catch(e){console.error(e)}})();return()=>{cancelled=true}},[searchArg,filters]);
+  useEffect(()=>{
+    let cancelled=false;
+    const timer=setTimeout(async()=>{
+      try{
+        let raw:any;
+        const params:any={min_connections:filters.minConnections,limit:36};
+        if(filters.location) params.location=filters.location;
+        if(filters.category) params.category=filters.category;
+        if(searchArg){
+          const found=await getIncidents({search:searchArg,limit:1});
+          raw=found.incidents?.[0]?await getIncidentGraph(found.incidents[0].id):await getFilteredGraph(params);
+        } else {
+          raw=await getFilteredGraph(params);
+        }
+        if(cancelled)return;
+        const typeMap:any={Phone:'PHONE',Transaction:'TRANSACTION_ID',Email:'EMAIL',Location:'LOCATION',CrimeCategory:'CRIME_CATEGORY'};
+        const nodes:GraphNode[]=raw.nodes.map((n:any)=>({id:n.id,label:n.label,type:typeMap[n.type]||n.type,properties:n.properties||{}}));
+        const edges=raw.edges.map((e:any)=>({id:e.id,source:e.source,target:e.target,rel_type:e.rel_type}));
+        const filtered=nodes.filter(n=>n.type==='Incident'||filters.propertyTypes.includes(n.type));
+        const ids=new Set(filtered.map(n=>n.id));
+        setGraphData({nodes:filtered,edges:edges.filter((e:any)=>ids.has(e.source)&&ids.has(e.target))});
+      }catch(e){console.error(e)}
+    },180);
+    return()=>{cancelled=true;clearTimeout(timer)}
+  },[searchArg,filters]);
 
   const handleResetFilters = () => {
     setFilters({
-      propertyTypes: ['PHONE', 'UPI', 'TRANSACTION_ID', 'URL', 'EMAIL', 'LOCATION'],
+      propertyTypes: ['PHONE', 'UPI', 'TRANSACTION_ID', 'URL', 'EMAIL', 'LOCATION', 'CRIME_CATEGORY'],
       location: '',
       category: '',
       minConnections: 1

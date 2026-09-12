@@ -11,7 +11,7 @@ export default function InvestigatorDashboard() {
   useEffect(()=>{getDashboardStats().then(setStats).catch(console.error)},[]);
   if(!stats)return <div className="max-w-7xl mx-auto px-6 py-12 text-slate-400">Loading intelligence dashboard...</div>;
 
-  const chartData = stats.top_connected_properties.map((p:any) => ({
+  const chartData = (stats.top_connected_properties || []).map((p:any) => ({
     name: p.normalized_value.length > 14 ? p.normalized_value.substring(0, 12) + '...' : p.normalized_value,
     count: p.connected_incidents_count,
     type: p.type
@@ -48,7 +48,7 @@ export default function InvestigatorDashboard() {
           </div>
           <span className="text-3xl font-extrabold text-white mt-2 block">{stats.total_incidents}</span>
           <span className="text-[11px] text-emerald-400 flex items-center gap-1 mt-1">
-            <TrendingUp className="w-3 h-3" /> +14 this week
+            <TrendingUp className="w-3 h-3" /> {stats.new_incidents_today || 0} citizen reports
           </span>
         </div>
 
@@ -63,11 +63,11 @@ export default function InvestigatorDashboard() {
 
         <div className="glass-panel p-5 rounded-2xl border border-obsidian-800">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Connected Clusters</span>
+            <span>Shared Indicator Hubs</span>
             <Network className="w-4 h-4 text-amber-400" />
           </div>
           <span className="text-3xl font-extrabold text-amber-400 mt-2 block">{stats.connected_clusters}</span>
-          <span className="text-[11px] text-slate-400 mt-1 block">Multi-incident networks</span>
+          <span className="text-[11px] text-slate-400 mt-1 block">Indicators shared by multiple incidents</span>
         </div>
 
         <div className="glass-panel p-5 rounded-2xl border border-obsidian-800">
@@ -75,8 +75,8 @@ export default function InvestigatorDashboard() {
             <span>Primary Hub Location</span>
             <MapPin className="w-4 h-4 text-pink-400" />
           </div>
-          <span className="text-2xl font-extrabold text-white mt-2 block">Kochi</span>
-          <span className="text-[11px] text-slate-400 mt-1 block">18 linked incidents</span>
+          <span className="text-2xl font-extrabold text-white mt-2 block">{stats.primary_hub_location || '—'}</span>
+          <span className="text-[11px] text-slate-400 mt-1 block">{stats.primary_hub_count || 0} reported incidents</span>
         </div>
 
       </div>
@@ -136,10 +136,10 @@ export default function InvestigatorDashboard() {
           </div>
 
           <Link
-            href="/investigator/network?search=scammer123%40upi"
+            href="/investigator/network"
             className="mt-4 w-full py-2.5 px-4 rounded-xl bg-obsidian-800 hover:bg-obsidian-700 text-slate-200 text-xs font-semibold text-center flex items-center justify-center gap-1.5 transition"
           >
-            Inspect Primary Demo Cluster <ExternalLink className="w-3.5 h-3.5" />
+            Inspect Most Connected Cluster <ExternalLink className="w-3.5 h-3.5" />
           </Link>
         </div>
 
